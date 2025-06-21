@@ -1,51 +1,34 @@
 import streamlit as st
 import pandas as pd
-import mysql.connector
 import re
 
-st.set_page_config(page_title="Excel & MySQL Data Chatbot", layout="wide")
-st.title("📊 Data Chatbot (Excel + MySQL)")
+st.set_page_config(page_title="Excel Data Chatbot", layout="wide")
+st.title("📊 Excel Data Chatbot (CSV/XLSX)")
 
-option = st.radio("Select Data Source:", ["Upload Excel", "Connect MySQL"])
+uploaded_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xlsx"])
 
 df = None
-
-if option == "Upload Excel":
-    uploaded_file = st.file_uploader("Upload Excel file (.xlsx only)", type=["xlsx"])
-    if uploaded_file:
+if uploaded_file:
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
         df = pd.read_excel(uploaded_file)
-        st.success("Excel file loaded successfully!")
-        st.dataframe(df, use_container_width=True)
-
-elif option == "Connect MySQL":
-    st.subheader("MySQL Connection Details")
-    host = st.text_input("MySQL Host", value="localhost")
-    user = st.text_input("MySQL User", value="root")
-    password = st.text_input("MySQL Password", type="password")
-    database = st.text_input("MySQL Database")
-
-    if st.button("Connect to MySQL"):
-        try:
-            conn = mysql.connector.connect(
-                host=host, user=user, password=password, database=database
-            )
-            cursor = conn.cursor()
-            cursor.execute("SHOW TABLES;")
-            tables = [table[0] for table in cursor.fetchall()]
-            st.success("Connected successfully!")
-            table = st.selectbox("Select a Table", tables)
-            if st.button("Load Table"):
-                df = pd.read_sql(f"SELECT * FROM {table}", conn)
-                st.dataframe(df, use_container_width=True)
-            conn.close()
-        except Exception as e:
-            st.error(f"MySQL Connection Failed: {e}")
+    st.success("File loaded successfully!")
+    st.dataframe(df, use_container_width=True)
 
 if df is not None:
-    st.subheader("📊 Dataset Summary & Exploration")
+    st.subheader("📌 Summary Statistics & Cleaning")
 
     if st.checkbox("Show Summary Statistics"):
         st.write(df.describe())
+
+    if st.checkbox("Show Missing Values"):
+        st.write(df.isnull().sum())
+
+    if st.checkbox("Remove Duplicates"):
+        df = df.drop_duplicates()
+        st.success("Duplicates removed!")
+        st.dataframe(df, use_container_width=True)
 
     st.subheader("🔎 Filter Data by Column")
     column = st.selectbox("Choose Column to Filter", df.columns)
@@ -53,7 +36,7 @@ if df is not None:
     selected_val = st.selectbox("Choose Value", unique_vals)
     st.dataframe(df[df[column] == selected_val], use_container_width=True)
 
-    st.subheader("Group & Aggregate Data")
+    st.subheader("📊 Group & Aggregate")
     group_col = st.selectbox("Group by Column", df.columns)
     agg_func = st.selectbox("Aggregation", ["count", "sum", "mean"])
 
@@ -66,8 +49,8 @@ if df is not None:
             result = df.groupby(group_col).mean(numeric_only=True)
         st.dataframe(result, use_container_width=True)
 
-    st.subheader("Ask a Question about the Data")
-    question = st.text_input("Type your question here")
+    st.subheader("❓ Ask a Question about the Data")
+    question = st.text_input("Type your question")
 
     def get_column(q):
         for col in df.columns:
@@ -119,4 +102,3 @@ if df is not None:
             st.dataframe(result, use_container_width=True)
         else:
             st.write(result)
-
