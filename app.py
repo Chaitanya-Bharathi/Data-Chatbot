@@ -1,113 +1,122 @@
 import streamlit as st
 import pandas as pd
 import mysql.connector
-import sys
-import os
+import re
 
-st.set_page_config(page_title="AI-Powered SQL & Excel Data Chatbot with MySQL")
+st.set_page_config(page_title="Excel & MySQL Data Chatbot", layout="wide")
+st.title("📊 Data Chatbot (Excel + MySQL)")
 
-st.title("🤖 AI-Powered SQL & Excel Data Chatbot with MySQL")
-st.write("Upload your Excel/CSV file or connect to a MySQL database, then ask questions!")
-
-uploaded_file = st.file_uploader("Upload Excel or CSV", type=['csv', 'xlsx'])
+option = st.radio("Select Data Source:", ["Upload Excel", "Connect MySQL"])
 
 df = None
-if uploaded_file:
-    if uploaded_file.name.endswith('.csv'):
-        df = pd.read_csv(uploaded_file)
-    else:
+
+if option == "Upload Excel":
+    uploaded_file = st.file_uploader("Upload Excel file (.xlsx only)", type=["xlsx"])
+    if uploaded_file:
         df = pd.read_excel(uploaded_file)
-    st.success("Data loaded successfully!")
-    st.write(df.head())
+        st.success("Excel file loaded successfully!")
+        st.dataframe(df, use_container_width=True)
 
+elif option == "Connect MySQL":
+    st.subheader("MySQL Connection Details")
+    host = st.text_input("MySQL Host", value="localhost")
+    user = st.text_input("MySQL User", value="root")
+    password = st.text_input("MySQL Password", type="password")
+    database = st.text_input("MySQL Database")
 
-st.subheader("🔗 Connect to MySQL Database")
-mysql_host = st.text_input("MySQL Host", value="localhost")
-mysql_user = st.text_input("MySQL User", value="root")
-mysql_password = st.text_input("MySQL Password", type="password")
-mysql_database = st.text_input("MySQL Database Name")
-connect_button = st.button("Connect to MySQL")
-
-conn = None
-cursor = None
-if connect_button:
-    try:
-        conn = mysql.connector.connect(
-            host=mysql_host,
-            user=mysql_user,
-            password=mysql_password,
-            database=mysql_database
-        )
-        cursor = conn.cursor()
-        cursor.execute("SHOW TABLES;")
-        tables = cursor.fetchall()
-        st.success("Connected to MySQL successfully!")
-        st.write("Tables available in DB:")
-        st.write(tables)
-    except Exception as e:
-        st.error(f"Error connecting to MySQL: {e}")
-
+    if st.button("Connect to MySQL"):
+        try:
+            conn = mysql.connector.connect(
+                host=host, user=user, password=password, database=database
+            )
+            cursor = conn.cursor()
+            cursor.execute("SHOW TABLES;")
+            tables = [table[0] for table in cursor.fetchall()]
+            st.success("Connected successfully!")
+            table = st.selectbox("Select a Table", tables)
+            if st.button("Load Table"):
+                df = pd.read_sql(f"SELECT * FROM {table}", conn)
+                st.dataframe(df, use_container_width=True)
+            conn.close()
+        except Exception as e:
+            st.error(f"MySQL Connection Failed: {e}")
 
 if df is not None:
-    st.subheader("🧹 Dataset Cleaning Options")
-
-    if st.checkbox("Show Missing Values Count"):
-        st.write(df.isnull().sum())
-
-    if st.checkbox("Fill Missing Values"):
-        fill_value = st.text_input("Value to replace missing values with:")
-        if st.button("Fill Now"):
-            df = df.fillna(fill_value)
-            st.success("Missing values filled.")
-            st.write(df.head())
-
-    if st.checkbox("Remove Duplicates"):
-        if st.button("Remove Duplicates Now"):
-            df = df.drop_duplicates()
-            st.success("Duplicates removed.")
-            st.write(df.head())
+    st.subheader("📊 Dataset Summary & Exploration")
 
     if st.checkbox("Show Summary Statistics"):
         st.write(df.describe())
 
+    st.subheader("🔎 Filter Data by Column")
+    column = st.selectbox("Choose Column to Filter", df.columns)
+    unique_vals = df[column].dropna().unique()
+    selected_val = st.selectbox("Choose Value", unique_vals)
+    st.dataframe(df[df[column] == selected_val], use_container_width=True)
 
-user_question = st.text_input("❓ Ask your question about the data:")
+    st.subheader("Group & Aggregate Data")
+    group_col = st.selectbox("Group by Column", df.columns)
+    agg_func = st.selectbox("Aggregation", ["count", "sum", "mean"])
 
-def query_openai(question, context):
-    prompt = f"""
-You are a data analyst helping with data analysis.
+    if st.button("Generate Aggregation"):
+        if agg_func == "count":
+            result = df.groupby(group_col).count()
+        elif agg_func == "sum":
+            result = df.groupby(group_col).sum(numeric_only=True)
+        elif agg_func == "mean":
+            result = df.groupby(group_col).mean(numeric_only=True)
+        st.dataframe(result, use_container_width=True)
 
-Dataset preview/context: 
-{context}
+    st.subheader("Ask a Question about the Data")
+    question = st.text_input("Type your question here")
 
-User Question: 
-{question}
+    def get_column(q):
+        for col in df.columns:
+            if col.lower() in q.lower():
+                return col
+        return None
 
-Provide SQL queries or Pandas code to answer the question based on context. Also, briefly explain.
-"""
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You help users analyze datasets with SQL or Pandas."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0
-    )
-    return response['choices'][0]['message']['content']
+    def process_question(q):
+        q = q.lower()
+        col = get_column(q)
+        if ("total" in q or "sum" in q) and col:
+            return f"Total of {col}: {df[col].sum(numeric_only=True)}"
+        elif ("average" in q or "mean" in q) and col:
+            return f"Average of {col}: {df[col].mean(numeric_only=True)}"
+        elif ("maximum" in q or "max" in q) and col:
+            return f"Maximum of {col}: {df[col].max()}"
+        elif ("minimum" in q or "min" in q) and col:
+            return f"Minimum of {col}: {df[col].min()}"
+        elif "unique" in q and col:
+            return f"Unique values in {col}: {df[col].unique()}"
+        elif "number of rows" in q:
+            return f"Number of rows: {len(df)}"
+        elif "columns" in q or "column names" in q:
+            return f"Columns: {list(df.columns)}"
+        elif "describe" in q or "summary" in q:
+            return df.describe()
+        elif "show data where" in q:
+            pattern = r"show data where (.+?) is (.+)"
+            match = re.search(pattern, q)
+            if match:
+                col_name = match.group(1).strip()
+                value = match.group(2).strip()
+                if col_name in df.columns:
+                    return df[df[col_name] == value]
+                else:
+                    return f"Column '{col_name}' not found."
+        elif "shape" in q:
+            return f"Shape of dataset: {df.shape}"
+        elif "first" in q and "rows" in q:
+            return df.head()
+        elif "last" in q and "rows" in q:
+            return df.tail()
+        else:
+            return "❗ I don’t understand that yet. Try: total, average, unique, columns, show data where..."
 
-if st.button("Get Answer") and user_question:
-    if df is not None:
-        context = df.head().to_string()
-        result = query_openai(user_question, context)
-        st.markdown("### 💬 Answer:")
-        st.code(result)
+    if question:
+        result = process_question(question)
+        if isinstance(result, pd.DataFrame):
+            st.dataframe(result, use_container_width=True)
+        else:
+            st.write(result)
 
-    elif conn is not None and cursor is not None:
-        cursor.execute("SHOW TABLES;")
-        context = "Available tables:\n" + "\n".join([str(table[0]) for table in cursor.fetchall()])
-        result = query_openai(user_question, context)
-        st.markdown("### 💬 Answer:")
-        st.code(result)
-
-    else:
-        st.warning("Please upload a file or connect to a database first.")
