@@ -77,9 +77,10 @@ if df is not None:
             return f"Columns: {list(df.columns)}"
         elif "describe" in q or "summary" in q:
             return df.describe()
-        elif "show data where" in q:
+        elif "show data where" in q.lower():
+            q=q.strip().r.strip(".")
             pattern = r"show data where (.+?) is (.+)"
-            match = re.search(pattern, q)
+            match = re.search(pattern, q,re.IGNORECASE)
             if match:
                 col_name = match.group(1).strip()
                 value = match.group(2).strip()
