@@ -71,9 +71,9 @@ if df is not None:
             return f"Minimum of {col}: {df[col].min()}"
         elif "unique" in q and col:
             return f"Unique values in {col}: {df[col].unique()}"
-        elif "number of rows" in q:
+        elif "number of rows" in q or "Number of rows" in q:
             return f"Number of rows: {len(df)}"
-        elif "columns" in q or "column names" in q:
+        elif "number of columns" in q or "column names" in q or "Number of columns" :
             return f"Columns: {list(df.columns)}"
         elif "describe" in q or "summary" in q:
             return df.describe()
